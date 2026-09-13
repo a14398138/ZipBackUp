@@ -20,9 +20,11 @@ public final class BackupWorker extends BaseWorker {
                 if(zip.exists()&&!zip.delete()) throw new IOException("前回の一時ファイルを削除できません");
                 status("ファイルをAES-256で暗号化中");
                 Archive.create(c,settings.roots(),zip,password,()->{check(); if(c.getFilesDir().getUsableSpace()<32*1024*1024) throw new IOException("端末の空き容量が不足しています");});
-                status("暗号化ZIPを検証中"); Archive.verify(zip,password,this::check);
+                try(FileOutputStream out=new FileOutputStream(zip,true)) { out.getFD().sync(); }
                 try(FileOutputStream out=new FileOutputStream(ready)) { out.write(1); out.getFD().sync(); }
             }
+            // Re-verify reused ZIPs too: process/device interruption must not turn a damaged local ZIP into a successful backup.
+            status("暗号化ZIPを検証中"); Archive.verify(zip,password,this::check);
             Drive drive=new Drive(c,account,this::check); String folder=drive.folder(); status("Driveへ送信中");
             String name="ZipBackUp-"+new SimpleDateFormat("yyyyMMdd-HHmmss",Locale.ROOT).format(new Date(zip.lastModified()))+"-"+getId().toString().substring(0,8)+".zip";
             String id=drive.upload(zip,folder,settings.deviceId(),getId().toString(),name);
