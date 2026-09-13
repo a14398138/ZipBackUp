@@ -93,7 +93,7 @@ final class Drive {
             session=start.getHeaderField("Location");
             if(session==null) throw new IOException("Driveがアップロード先を返しませんでした");
         } finally { start.disconnect(); }
-        long offset=0, size=file.length(); byte[] chunk=new byte[8*1024*1024];
+        long offset=0, size=file.length(); byte[] chunk=new byte[16*1024*1024];
         try(RandomAccessFile input=new RandomAccessFile(file,"r")) {
             while(offset<size) {
                 check.run(); int n=(int)Math.min(chunk.length,size-offset); input.seek(offset); input.readFully(chunk,0,n);
@@ -103,7 +103,7 @@ final class Drive {
                     conn.setRequestProperty("Content-Type","application/zip");
                     conn.setRequestProperty("Content-Range","bytes "+offset+"-"+(offset+n-1)+"/"+size);
                     try(OutputStream out=conn.getOutputStream()) {
-                        for(int pos=0;pos<n;pos+=65536) { check.run(); out.write(chunk,pos,Math.min(65536,n-pos)); }
+                        for(int pos=0;pos<n;pos+=262144) { check.run(); out.write(chunk,pos,Math.min(262144,n-pos)); }
                     }
                     int code=conn.getResponseCode();
                     if(code==200||code==201) {
@@ -126,7 +126,7 @@ final class Drive {
         JSONObject remote=json(API+"/"+encode(id)+"?fields=size,md5Checksum","GET",null);
         MessageDigest md=MessageDigest.getInstance("MD5"); // Transport integrity only; ZIP content uses AES authentication.
         try(InputStream in=new FileInputStream(file)) {
-            byte[] b=new byte[65536]; int n; while((n=in.read(b))!=-1) { check.run(); md.update(b,0,n); }
+            byte[] b=new byte[262144]; int n; while((n=in.read(b))!=-1) { check.run(); md.update(b,0,n); }
         }
         StringBuilder hex=new StringBuilder(); for(byte b:md.digest()) hex.append(String.format(Locale.ROOT,"%02x",b&255));
         if(remote.getLong("size")!=file.length()||!hex.toString().equals(remote.optString("md5Checksum")))

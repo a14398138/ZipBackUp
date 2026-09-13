@@ -15,18 +15,34 @@ import java.util.*;
 final class Archive {
     interface Check { void run() throws IOException; }
     private static final long MAX_EXTRACT = 200L * 1024 * 1024 * 1024;
+    private static final Set<String> PRE_COMPRESSED_EXTS = new HashSet<>(Arrays.asList(
+        "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif",
+        "mp4", "mkv", "mov", "webm", "avi", "m4v", "3gp",
+        "mp3", "m4a", "aac", "ogg", "flac", "opus", "wav",
+        "zip", "gz", "tgz", "bz2", "xz", "7z", "rar", "apk", "pdf"
+    ));
+
+    static boolean shouldStoreOnly(String path) {
+        if (path == null) return false;
+        int dot = path.lastIndexOf('.');
+        if (dot < 0 || dot == path.length() - 1) return false;
+        String ext = path.substring(dot + 1).toLowerCase(Locale.ROOT);
+        return PRE_COMPRESSED_EXTS.contains(ext);
+    }
+
     static ZipParameters parameters(String path, boolean directory) {
         ZipParameters p = new ZipParameters();
         p.setFileNameInZip(path);
         p.setEncryptFiles(!directory);
         p.setEncryptionMethod(EncryptionMethod.AES);
         p.setAesKeyStrength(AesKeyStrength.KEY_STRENGTH_256);
-        p.setCompressionMethod(CompressionMethod.DEFLATE);
+        p.setCompressionMethod((!directory && shouldStoreOnly(path)) ? CompressionMethod.STORE : CompressionMethod.DEFLATE);
         return p;
     }
+
     static long create(Context c, List<String> roots, File file, char[] password, Check check) throws Exception {
         long[] count = {0}; Set<String> paths = new HashSet<>();
-        try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(file)), password)) {
+        try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(file), 256 * 1024), password)) {
             int index = 0;
             for (String raw : roots) {
                 check.run(); Uri tree = Uri.parse(raw);
@@ -43,6 +59,7 @@ final class Archive {
         if (count[0] == 0) throw new IOException("対象ファイルが0件です。フォルダの内容を確認してください");
         return count[0];
     }
+
     private static void walk(Context c, Uri tree, String id, String path, ZipOutputStream zip,
                              Set<String> paths, long[] count, Check check, int depth) throws Exception {
         check.run();
@@ -80,8 +97,9 @@ final class Archive {
             }
         }
     }
+
     static long copy(InputStream in, OutputStream out, Check check, long limit) throws IOException {
-        byte[] buffer = new byte[64 * 1024]; long total = 0; int n;
+        byte[] buffer = new byte[256 * 1024]; long total = 0; int n;
         while ((n = in.read(buffer)) != -1) {
             check.run(); total += n;
             if (total > limit) throw new IOException("ファイルサイズが上限を超えました");
@@ -89,6 +107,7 @@ final class Archive {
         }
         return total;
     }
+
     static void verify(File file, char[] password, Check check) throws Exception {
         try (ZipFile zip = new ZipFile(file, password)) {
             List<FileHeader> headers = zip.getFileHeaders();
@@ -110,6 +129,7 @@ final class Archive {
             }
         }
     }
+
     static void restore(Context c, File file, char[] password, Uri destination, Check check) throws Exception {
         verify(file, password, check); // Authenticate every entry before writing any plaintext.
         DocumentFile parent = DocumentFile.fromTreeUri(c, destination);
