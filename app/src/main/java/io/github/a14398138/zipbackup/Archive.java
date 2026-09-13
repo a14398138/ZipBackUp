@@ -45,19 +45,59 @@ final class Archive {
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(file), 256 * 1024), password)) {
             int index = 0;
             for (String raw : roots) {
-                check.run(); Uri tree = Uri.parse(raw);
-                String id = DocumentsContract.getTreeDocumentId(tree);
-                Uri doc = DocumentsContract.buildDocumentUriUsingTree(tree, id);
-                String name;
-                try (Cursor cur = c.getContentResolver().query(doc, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
-                    if (cur == null || !cur.moveToFirst()) throw new IOException("選択フォルダを読み取れません。再選択してください");
-                    name = ArchiveRules.component(cur.getString(0));
+                check.run();
+                if (raw.startsWith("file://")) {
+                    File dir = new File(Uri.parse(raw).getPath());
+                    if (!dir.exists() || !dir.isDirectory()) throw new IOException("フォルダが見つかりません: " + dir.getName());
+                    String name = ArchiveRules.component(dir.getName().isEmpty() ? "root" : dir.getName());
+                    walkFile(dir, (++index) + "-" + name + "/", zip, paths, count, check, 0);
+                } else {
+                    Uri tree = Uri.parse(raw);
+                    String id = DocumentsContract.getTreeDocumentId(tree);
+                    Uri doc = DocumentsContract.buildDocumentUriUsingTree(tree, id);
+                    String name;
+                    try (Cursor cur = c.getContentResolver().query(doc, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+                        if (cur == null || !cur.moveToFirst()) throw new IOException("選択フォルダを読み取れません。再選択してください");
+                        name = ArchiveRules.component(cur.getString(0));
+                    }
+                    walk(c, tree, id, (++index) + "-" + name + "/", zip, paths, count, check, 0);
                 }
-                walk(c, tree, id, (++index) + "-" + name + "/", zip, paths, count, check, 0);
             }
         }
         if (count[0] == 0) throw new IOException("対象ファイルが0件です。フォルダの内容を確認してください");
         return count[0];
+    }
+
+    private static void walkFile(File dir, String path, ZipOutputStream zip,
+                                 Set<String> paths, long[] count, Check check, int depth) throws Exception {
+        check.run();
+        if (depth > 60 || paths.size() >= 100000) throw new IOException("対象が上限（10万項目・60階層）を超えました");
+        if (!paths.add(path)) throw new IOException("同じ名前の項目があります");
+        zip.putNextEntry(parameters(path, true)); zip.closeEntry();
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        Arrays.sort(files, Comparator.comparing(File::getName));
+        for (File f : files) {
+            check.run();
+            String name = ArchiveRules.component(f.getName());
+            if (f.isDirectory()) {
+                walkFile(f, path + name + "/", zip, paths, count, check, depth + 1);
+            } else if (f.isFile()) {
+                String entry = path + name;
+                if (paths.size() >= 100000 || !paths.add(entry)) throw new IOException("項目数が多すぎるか名前が重複しています");
+                long expected = f.length(), modified = f.lastModified();
+                zip.putNextEntry(parameters(entry, false));
+                long read;
+                try (InputStream in = new BufferedInputStream(new FileInputStream(f), 256 * 1024)) {
+                    read = copy(in, zip, check, Long.MAX_VALUE);
+                }
+                zip.closeEntry();
+                if (expected != read || f.length() != read || f.lastModified() != modified) {
+                    throw new IOException("処理中にファイルが変わりました。再実行してください: " + name);
+                }
+                count[0]++;
+            }
+        }
     }
 
     private static void walk(Context c, Uri tree, String id, String path, ZipOutputStream zip,
@@ -132,6 +172,36 @@ final class Archive {
 
     static void restore(Context c, File file, char[] password, Uri destination, Check check) throws Exception {
         verify(file, password, check); // Authenticate every entry before writing any plaintext.
+        if ("file".equals(destination.getScheme())) {
+            File destDir = new File(destination.getPath());
+            if (!destDir.exists() || !destDir.canWrite()) throw new IOException("復元先に書き込めません");
+            File root = new File(destDir, "ZipBackUp-restore-" + System.currentTimeMillis());
+            if (!root.mkdirs()) throw new IOException("復元フォルダを作成できません");
+            boolean ok = false;
+            try (ZipFile zip = new ZipFile(file, password)) {
+                for (FileHeader h : zip.getFileHeaders()) {
+                    check.run(); String[] parts = ArchiveRules.path(h.getFileName());
+                    File target = root;
+                    for (int i = 0; i < parts.length - (h.isDirectory() ? 0 : 1); i++) {
+                        target = new File(target, parts[i]);
+                    }
+                    if (h.isDirectory()) {
+                        if (!target.exists() && !target.mkdirs()) throw new IOException("フォルダを作成できません");
+                    } else {
+                        File parent = target.getParentFile();
+                        if (parent != null && !parent.exists() && !parent.mkdirs()) throw new IOException("親フォルダを作成できません");
+                        try (InputStream in = zip.getInputStream(h); OutputStream out = new BufferedOutputStream(new FileOutputStream(target), 256 * 1024)) {
+                            copy(in, out, check, h.getUncompressedSize());
+                        }
+                    }
+                }
+                ok = true;
+            } finally {
+                if (!ok) deleteRecursive(root);
+            }
+            return;
+        }
+
         DocumentFile parent = DocumentFile.fromTreeUri(c, destination);
         if (parent == null || !parent.canWrite()) throw new IOException("復元先に書き込めません");
         DocumentFile root = parent.createDirectory("ZipBackUp-restore-" + System.currentTimeMillis());
@@ -161,5 +231,16 @@ final class Archive {
         } finally {
             if (!ok && !root.delete()) throw new IOException("復元先に未完成フォルダが残っています。削除してください");
         }
+    }
+
+    private static void deleteRecursive(File f) {
+        if (f == null || !f.exists()) return;
+        if (f.isDirectory()) {
+            File[] children = f.listFiles();
+            if (children != null) {
+                for (File c : children) deleteRecursive(c);
+            }
+        }
+        f.delete();
     }
 }

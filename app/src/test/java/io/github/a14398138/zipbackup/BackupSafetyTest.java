@@ -10,11 +10,13 @@ import net.lingala.zip4j.model.enums.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+
 import static org.junit.Assert.*;
 
 public class BackupSafetyTest {
     @Rule public TemporaryFolder temp=new TemporaryFolder();
     private final char[] password="correct horse battery staple".toCharArray();
+
     private File zip() throws Exception {
         File file=temp.newFile();
         try(ZipOutputStream out=new ZipOutputStream(new FileOutputStream(file),password)) {
@@ -23,6 +25,7 @@ public class BackupSafetyTest {
         }
         return file;
     }
+
     @Test public void aes256RoundTripAndVerify() throws Exception {
         File file=zip(); Archive.verify(file,password,()->{});
         try(ZipFile z=new ZipFile(file,password)) {
@@ -32,9 +35,11 @@ public class BackupSafetyTest {
             try(InputStream in=z.getInputStream(h)) { assertEquals("写真のバックアップを復元できる",new String(in.readAllBytes(),StandardCharsets.UTF_8)); }
         }
     }
+
     @Test public void wrongPasswordIsRejected() throws Exception {
         File file=zip(); assertThrows(Exception.class,()->Archive.verify(file,"wrong password".toCharArray(),()->{}));
     }
+
     @Test public void modifiedCiphertextIsRejected() throws Exception {
         File file=zip();
         try(RandomAccessFile f=new RandomAccessFile(file,"rw")) {
@@ -44,6 +49,7 @@ public class BackupSafetyTest {
         }
         assertThrows(Exception.class,()->Archive.verify(file,password,()->{}));
     }
+
     @Test public void plainZipIsRejected() throws Exception {
         File file=temp.newFile();
         try(java.util.zip.ZipOutputStream z=new java.util.zip.ZipOutputStream(new FileOutputStream(file))) {
@@ -51,11 +57,14 @@ public class BackupSafetyTest {
         }
         assertThrows(IOException.class,()->Archive.verify(file,password,()->{}));
     }
+
     @Test public void rejectsTraversalAbsoluteAndAmbiguousPaths() {
         for(String name:Arrays.asList("../secret","/etc/passwd","a/../../b","a\\b","C:/test","a//b","a/./b","a\u0000b",""))
             assertThrows(name,IOException.class,()->ArchiveRules.path(name));
     }
+
     @Test public void unicodePathIsPreserved() throws Exception { assertArrayEquals(new String[]{"写真","旅行.jpg"},ArchiveRules.path("写真/旅行.jpg")); }
+
     @Test public void rejectsFileDirectoryAndCaseCollisions() throws Exception {
         ArchiveRules.PathIndex first=new ArchiveRules.PathIndex(); first.add("a",false);
         assertThrows(IOException.class,()->first.add("a/b",false));
@@ -63,28 +72,45 @@ public class BackupSafetyTest {
         assertThrows(IOException.class,()->second.add("photo/b.jpg",false));
         ArchiveRules.PathIndex third=new ArchiveRules.PathIndex(); third.add("a/",true); third.add("a/b",false);
     }
+
     @Test public void keepSevenAndNeverDeleteAll() {
         List<String> ids=Arrays.asList("9","8","7","6","5","4","3","2","1");
         assertEquals(Arrays.asList("2","1"),ArchiveRules.expired(ids,7));
         assertTrue(ArchiveRules.expired(ids.subList(0,3),7).isEmpty());
         assertThrows(IllegalArgumentException.class,()->ArchiveRules.expired(ids,0));
     }
+
     @Test public void wifiOnlyDoesNotPermitCellularEvenWhenUnmetered() {
         assertFalse(NetworkPolicy.allows(false,true,false,true));
         assertFalse(NetworkPolicy.allows(false,true,false,false));
         assertFalse(NetworkPolicy.allows(false,true,true,false));
         assertTrue(NetworkPolicy.allows(false,true,true,true));
     }
+
     @Test public void cellularRequiresOptInAndValidatedConnection() {
         assertTrue(NetworkPolicy.allows(true,true,false,false));
         assertFalse(NetworkPolicy.allows(true,false,false,false));
     }
+
     @Test public void cancellationInterruptsStreaming() throws Exception {
         assertThrows(IOException.class,()->Archive.copy(new ByteArrayInputStream(new byte[100]),new ByteArrayOutputStream(),()->{throw new IOException("cancel");},1000));
     }
+
     @Test public void oversizedExtractionStopsBeforeWriting() throws Exception {
         ByteArrayOutputStream out=new ByteArrayOutputStream();
         assertThrows(IOException.class,()->Archive.copy(new ByteArrayInputStream(new byte[100]),out,()->{},10));
         assertEquals(0,out.size());
+    }
+
+    @Test public void shouldStoreOnlyIdentifiesPrecompressedFiles() {
+        assertTrue(Archive.shouldStoreOnly("test.jpg"));
+        assertTrue(Archive.shouldStoreOnly("sub/photo.PNG"));
+        assertTrue(Archive.shouldStoreOnly("movie.mp4"));
+        assertTrue(Archive.shouldStoreOnly("doc.pdf"));
+        assertTrue(Archive.shouldStoreOnly("archive.zip"));
+        assertFalse(Archive.shouldStoreOnly("text.txt"));
+        assertFalse(Archive.shouldStoreOnly("log.csv"));
+        assertFalse(Archive.shouldStoreOnly("code.java"));
+        assertFalse(Archive.shouldStoreOnly("no_ext"));
     }
 }
