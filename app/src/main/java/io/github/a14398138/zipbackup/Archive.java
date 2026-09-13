@@ -93,11 +93,10 @@ final class Archive {
         try (ZipFile zip = new ZipFile(file, password)) {
             List<FileHeader> headers = zip.getFileHeaders();
             if (headers.isEmpty() || headers.size() > 100000) throw new IOException("ZIPの項目数が不正です");
-            Set<String> seen = new HashSet<>(); long total = 0;
+            ArchiveRules.PathIndex names = new ArchiveRules.PathIndex(); long total = 0;
             for (FileHeader h : headers) {
                 check.run(); ArchiveRules.path(h.getFileName());
-                String key = String.join("/", ArchiveRules.path(h.getFileName()));
-                if (!seen.add(key)) throw new IOException("ZIP内の名前が重複しています");
+                names.add(h.getFileName(), h.isDirectory());
                 if (h.isDirectory()) continue;
                 if (!h.isEncrypted() || h.getEncryptionMethod() != EncryptionMethod.AES || h.getAesExtraDataRecord() == null
                         || h.getAesExtraDataRecord().getAesKeyStrength() != AesKeyStrength.KEY_STRENGTH_256)
@@ -140,7 +139,7 @@ final class Archive {
             }
             ok = true;
         } finally {
-            if (!ok && !root.delete()) new Settings(c).status("復元失敗。復元先に未完成フォルダが残っています。削除してください");
+            if (!ok && !root.delete()) throw new IOException("復元先に未完成フォルダが残っています。削除してください");
         }
     }
 }

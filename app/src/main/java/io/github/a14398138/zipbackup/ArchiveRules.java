@@ -18,6 +18,23 @@ final class ArchiveRules {
         for (String p : parts) component(p);
         return parts;
     }
+    static final class PathIndex {
+        private final Map<String,String> names = new HashMap<>();
+        private final Map<String,Boolean> directories = new HashMap<>();
+        private final Set<String> entries = new HashSet<>();
+        void add(String name, boolean directory) throws IOException {
+            String[] parts = path(name); String raw = "";
+            for (int i=0; i<parts.length; i++) {
+                raw += (i==0 ? "" : "/") + parts[i];
+                String key = java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
+                boolean isDir = i<parts.length-1 || directory;
+                if (names.containsKey(key) && (!names.get(key).equals(raw) || directories.get(key)!=isDir))
+                    throw new IOException("復元先で名前が衝突するZIPです");
+                names.put(key,raw); directories.put(key,isDir);
+                if (i==parts.length-1 && !entries.add(key)) throw new IOException("ZIP内の名前が重複しています");
+            }
+        }
+    }
     static List<String> expired(List<String> newestFirst, int keep) {
         if (keep < 1) throw new IllegalArgumentException("keep");
         return new ArrayList<>(newestFirst.subList(Math.min(keep, newestFirst.size()), newestFirst.size()));

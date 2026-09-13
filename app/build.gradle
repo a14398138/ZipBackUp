@@ -23,7 +23,10 @@ android {
     }
     buildTypes {
         debug { applicationIdSuffix '.debug'; versionNameSuffix '-debug' }
-        release { signingConfig signingConfigs.release; minifyEnabled false }
+        release {
+            if (System.getenv('KEYSTORE_PATH')) signingConfig signingConfigs.release
+            minifyEnabled false
+        }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
@@ -34,4 +37,9 @@ dependencies {
     implementation 'com.google.android.gms:play-services-auth:21.3.0'
     implementation 'net.lingala.zip4j:zip4j:2.11.6'
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
+
+tasks.withType(Test).configureEach { testLogging { events "passed", "failed", "skipped" } }

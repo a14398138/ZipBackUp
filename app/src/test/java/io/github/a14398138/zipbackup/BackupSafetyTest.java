@@ -56,6 +56,13 @@ public class BackupSafetyTest {
             assertThrows(name,IOException.class,()->ArchiveRules.path(name));
     }
     @Test public void unicodePathIsPreserved() throws Exception { assertArrayEquals(new String[]{"写真","旅行.jpg"},ArchiveRules.path("写真/旅行.jpg")); }
+    @Test public void rejectsFileDirectoryAndCaseCollisions() throws Exception {
+        ArchiveRules.PathIndex first=new ArchiveRules.PathIndex(); first.add("a",false);
+        assertThrows(IOException.class,()->first.add("a/b",false));
+        ArchiveRules.PathIndex second=new ArchiveRules.PathIndex(); second.add("Photo/a.jpg",false);
+        assertThrows(IOException.class,()->second.add("photo/b.jpg",false));
+        ArchiveRules.PathIndex third=new ArchiveRules.PathIndex(); third.add("a/",true); third.add("a/b",false);
+    }
     @Test public void keepSevenAndNeverDeleteAll() {
         List<String> ids=Arrays.asList("9","8","7","6","5","4","3","2","1");
         assertEquals(Arrays.asList("2","1"),ArchiveRules.expired(ids,7));

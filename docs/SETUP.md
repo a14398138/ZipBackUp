@@ -2,11 +2,13 @@
 
 初回だけ **APKの署名設定** と **Google Cloudへのアプリ登録** が必要です。Googleアカウントのパスワード、署名鍵、ZIPパスワードをチャットや公開リポジトリに貼らないでください。
 
-## 1. APKの署名鍵を作る
+## 1. APKの署名鍵を用意する
 
 署名鍵は「次のAPKも同じ作者の更新である」とAndroidに示すものです。更新時も同じ鍵を使います。APKビルドのたびに生成し直すことはしません。
 
-Java 17以降が入った自分のPCのターミナルで実行します（WindowsはGit Bash等を使用）。PCがない場合は、この手順を実行できる環境について相談してください。
+この会話で受け取った `ZipBackUp-signing-setup.txt` がある場合、鍵は生成済みです。**再生成せず、手順2へ進んでください。** ファイル内の2つの値をスマホからコピーできます。署名鍵ファイルは公開リポジトリには置いていません。
+
+設定ファイルを使わず自分で新規生成する場合のみ、Java 17以降が入った自分のPCのターミナルで実行します（WindowsはGit Bash等を使用）。PCがない場合は、この手順を実行できる環境について相談してください。
 
 ```sh
 git clone https://github.com/a14398138/ZipBackUp.git
@@ -22,8 +24,8 @@ bash scripts/create-signing-key.sh
 
 | Name | Secretに入れるもの |
 |---|---|
-| `KEYSTORE_BASE64` | `signing-private/KEYSTORE_BASE64.txt` の内容全体 |
-| `KEYSTORE_PASSWORD` | 手順1で入力した署名鍵用パスワード |
+| `KEYSTORE_BASE64` | 設定ファイル内のKEYSTORE_BASE64の値（自分で生成した場合は `signing-private/KEYSTORE_BASE64.txt` の内容） |
+| `KEYSTORE_PASSWORD` | 設定ファイル内のKEYSTORE_PASSWORDの値（自分で生成した場合は手順1のパスワード） |
 
 APKやReleaseへ秘密鍵を添付しないでください。公開してよいのは証明書の指紋（SHA-1など）です。
 
